@@ -101,9 +101,10 @@ jobs:
               core.setOutput('pr_number', pr.number);
               // build-pr ジョブと同様のロジックでクリーンなブランチ名を生成
               const raw_branch = pr.head.ref;
+              core.setOutput('raw_branch', raw_branch);
               const clean_branch = raw_branch.replace('release-waiting-', '').replace(/[^a-zA-Z0-9]/g, '-');
               core.setOutput('branch_for_search', clean_branch);
-              console.log(`Associated PR: ${pr.number}, Search Branch: ${clean_branch}`);
+              console.log(`Associated PR: ${pr.number}, Branch: ${raw_branch}, Search: ${clean_branch}`);
             } else {
               core.setFailed('No associated PR found for this commit.');
             }
@@ -118,21 +119,33 @@ jobs:
             
             // その実行のアーティファクトを取得 (PRの最新の成功実行から)
             // PRに関連する最新のワークフロー実行をリストアップ
+            // listWorkflowRunsForRepo does not always return pull_requests in the response depending on how it's called.
+            // Using listWorkflowRuns with branch might be more reliable if we know the branch.
+            const branch_raw = "${{ steps.pr_info.outputs.raw_branch }}";
             const runs = await github.rest.actions.listWorkflowRunsForRepo({
               owner,
               repo,
-              event: 'pull_request',
+              branch: branch_raw,
               status: 'success',
               per_page: 50
             });
             
+            console.log(`Searching for runs on branch: ${branch_raw}. Found ${runs.data.workflow_runs.length} successful runs.`);
+            
             // 該当するPR番号の実行を探す
-            const pr_run = runs.data.workflow_runs.find(run => 
-              run.pull_requests.some(pr => pr.number == pr_number)
+            let pr_run = runs.data.workflow_runs.find(run => 
+              run.pull_requests && run.pull_requests.some(pr => pr.number == pr_number)
             );
+
+            // If not found by pull_requests array, just take the latest successful run on that branch
+            // which is likely the one that built the PR.
+            if (!pr_run && runs.data.workflow_runs.length > 0) {
+              console.log(`PR # ${pr_number} not explicitly found in run metadata. Using the latest successful run on branch ${branch_raw}.`);
+              pr_run = runs.data.workflow_runs[0];
+            }
             
             if (!pr_run) {
-              throw new Error(`No successful workflow run found for PR #${pr_number}`);
+              throw new Error(`No successful workflow run found for branch ${branch_raw} (PR #${pr_number})`);
             }
             
             const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
