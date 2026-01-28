@@ -186,7 +186,11 @@ jobs:
           TAG_NAME="release-${BRANCH_PART}-$(date +'%H%m%s')"
           echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
+      - name: Zip artifacts for Release
+        run: |
+          cd out && zip -r ../build-assets.zip .
+
+      - name: Create Release and Upload Asset
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
@@ -194,19 +198,7 @@ jobs:
           name: Release ${{ steps.release_tag.outputs.tag_name }}
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Zip artifacts for Release
-        run: |
-          cd out && zip -r ../build-assets.zip .
-
-      - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_tag.outputs.tag_name }}
-          files: |
-            build-assets.zip
+          files: build-assets.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
