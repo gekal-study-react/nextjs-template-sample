@@ -39,9 +39,15 @@ jobs:
         id: tag
         run: |
           # PRブランチ名に基づいたユニークなタグ名を作成
-          BRANCH_NAME=$(echo "${{ github.head_ref }}" | sed 's/[^a-zA-Z0-9]/-/g')
-          BUILD_TAG="${BRANCH_NAME}-${{ github.run_id }}-${{ github.run_attempt }}"
+          # release-waiting-20260128 のような形式から日付部分を抽出したり、記号を置換
+          RAW_BRANCH="${{ github.head_ref }}"
+          CLEAN_BRANCH=$(echo "$RAW_BRANCH" | sed 's/release-waiting-//' | sed 's/[^a-zA-Z0-9]/-/g')
+          
+          # タブ名として分かりやすい形式に（例: 20260128-build-1）
+          BUILD_TAG="${CLEAN_BRANCH}-build-${{ github.run_number }}"
+          
           echo "tag=${BUILD_TAG}" >> $GITHUB_OUTPUT
+          echo "branch_for_search=${CLEAN_BRANCH}" >> $GITHUB_OUTPUT
           echo "Build Tag: ${BUILD_TAG}"
 
       - name: Build
@@ -93,8 +99,11 @@ jobs:
             if (pulls.data.length > 0) {
               const pr = pulls.data[0];
               core.setOutput('pr_number', pr.number);
-              core.setOutput('branch_name', pr.head.ref.replace(/[^a-zA-Z0-9]/g, '-'));
-              console.log(`Associated PR: ${pr.number}`);
+              // build-pr ジョブと同様のロジックでクリーンなブランチ名を生成
+              const raw_branch = pr.head.ref;
+              const clean_branch = raw_branch.replace('release-waiting-', '').replace(/[^a-zA-Z0-9]/g, '-');
+              core.setOutput('branch_for_search', clean_branch);
+              console.log(`Associated PR: ${pr.number}, Search Branch: ${clean_branch}`);
             } else {
               core.setFailed('No associated PR found for this commit.');
             }
@@ -105,16 +114,16 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const pr_number = "${{ steps.pr_info.outputs.pr_number }}";
-            const branch_name = "${{ steps.pr_info.outputs.branch_name }}";
+            const branch_for_search = "${{ steps.pr_info.outputs.branch_for_search }}";
             
-            // PRに関連する最新のワークフロー実行を取得
+            // その実行のアーティファクトを取得 (PRの最新の成功実行から)
+            // PRに関連する最新のワークフロー実行をリストアップ
             const runs = await github.rest.actions.listWorkflowRunsForRepo({
               owner,
               repo,
               event: 'pull_request',
-              branch: branch_name,
               status: 'success',
-              per_page: 10
+              per_page: 50
             });
             
             // 該当するPR番号の実行を探す
@@ -126,18 +135,17 @@ jobs:
               throw new Error(`No successful workflow run found for PR #${pr_number}`);
             }
             
-            // その実行のアーティファクトを取得
             const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
               owner,
               repo,
               run_id: pr_run.id,
             });
             
-            // ブランチ名を含むアーティファクトを探す
-            const artifact = artifacts.data.artifacts.find(art => art.name.startsWith(branch_name));
+            // 生成されたブランチ名部分を含むアーティファクトを探す
+            const artifact = artifacts.data.artifacts.find(art => art.name.startsWith(branch_for_search));
             
             if (!artifact) {
-              throw new Error(`No artifact found starting with ${branch_name} for run ${pr_run.id}`);
+              throw new Error(`No artifact found starting with ${branch_for_search} for run ${pr_run.id}`);
             }
             
             console.log(`Downloading artifact: ${artifact.name} (ID: ${artifact.id})`);
@@ -160,7 +168,9 @@ jobs:
       - name: Create Release Tag
         id: release_tag
         run: |
-          TAG_NAME="release-$(date +'%Y%m%d%H%M%S')"
+          # 検索用ブランチ名（例: 20260128）をベースにリリース名を作成
+          BRANCH_PART="${{ steps.pr_info.outputs.branch_for_search }}"
+          TAG_NAME="release-${BRANCH_PART}-$(date +'%H%m%s')"
           echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
