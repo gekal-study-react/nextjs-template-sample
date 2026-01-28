@@ -67,25 +67,93 @@ jobs:
   release-and-deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
     outputs:
       release_tag: ${{ steps.create_release.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Get PR number
+        id: pr_info
+        uses: actions/github-script@v7
         with:
-          node-version: '24'
-          cache: 'pnpm'
+          script: |
+            const { owner, repo } = context.repo;
+            const commit_sha = context.sha;
+            const pulls = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner,
+              repo,
+              commit_sha,
+            });
+            if (pulls.data.length > 0) {
+              const pr = pulls.data[0];
+              core.setOutput('pr_number', pr.number);
+              core.setOutput('branch_name', pr.head.ref.replace(/[^a-zA-Z0-9]/g, '-'));
+              console.log(`Associated PR: ${pr.number}`);
+            } else {
+              core.setFailed('No associated PR found for this commit.');
+            }
 
-      - name: Install pnpm
-        run: npm install -g pnpm
+      - name: Download Artifact from PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr_number = "${{ steps.pr_info.outputs.pr_number }}";
+            const branch_name = "${{ steps.pr_info.outputs.branch_name }}";
+            
+            // PRに関連する最新のワークフロー実行を取得
+            const runs = await github.rest.actions.listWorkflowRunsForRepo({
+              owner,
+              repo,
+              event: 'pull_request',
+              branch: branch_name,
+              status: 'success',
+              per_page: 10
+            });
+            
+            // 該当するPR番号の実行を探す
+            const pr_run = runs.data.workflow_runs.find(run => 
+              run.pull_requests.some(pr => pr.number == pr_number)
+            );
+            
+            if (!pr_run) {
+              throw new Error(`No successful workflow run found for PR #${pr_number}`);
+            }
+            
+            // その実行のアーティファクトを取得
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner,
+              repo,
+              run_id: pr_run.id,
+            });
+            
+            // ブランチ名を含むアーティファクトを探す
+            const artifact = artifacts.data.artifacts.find(art => art.name.startsWith(branch_name));
+            
+            if (!artifact) {
+              throw new Error(`No artifact found starting with ${branch_name} for run ${pr_run.id}`);
+            }
+            
+            console.log(`Downloading artifact: ${artifact.name} (ID: ${artifact.id})`);
+            
+            const download = await github.rest.actions.downloadArtifact({
+              owner,
+              repo,
+              artifact_id: artifact.id,
+              archive_format: 'zip',
+            });
+            
+            const fs = require('fs');
+            fs.writeFileSync('${{ github.workspace }}/pr-artifact.zip', Buffer.from(download.data));
 
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build
-        run: pnpm build
+      - name: Unzip PR artifact
+        run: |
+          mkdir -p out
+          unzip pr-artifact.zip -d out
 
       - name: Create Release Tag
         id: release_tag
