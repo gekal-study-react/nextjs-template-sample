@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main
-    types: [opened, synchronize, reopened]
+    types: [ opened, synchronize, reopened ]
   push:
     branches:
       - main
@@ -21,14 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'pnpm'
-
-      - name: Install pnpm
-        run: npm install -g pnpm
 
       - name: Install dependencies
         run: pnpm install
@@ -194,7 +196,7 @@ jobs:
     steps:
       - name: Download Release Asset
         uses: actions/checkout@v4 # リポジトリの内容が必要な場合のため（通常は不要かもしれないが安全策）
-      
+
       - name: Download Build Artifacts from Release
         uses: dsaltares/fetch-gh-release-asset@master
         with:
