@@ -80,7 +80,7 @@ jobs:
       actions: read
       pull-requests: read
     outputs:
-      release_tag: ${{ steps.create_release.outputs.tag_name }}
+      release_tag: ${{ steps.release_tag.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v4
 
