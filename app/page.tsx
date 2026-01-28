@@ -1,141 +1,129 @@
 "use client";
 
-import {useState, useEffect} from "react";
-
-type Todo = {
-  id: number;
-  text: string;
-  completed: boolean;
-};
+import { useState } from "react";
+import { useTodo } from "@/context/TodoContext";
+import { Trash2, Plus, Calendar } from "lucide-react";
 
 export default function Home() {
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const { todos, categories, addTodo, toggleTodo, deleteTodo, isInitialized } = useTodo();
   const [inputValue, setInputValue] = useState("");
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState("1");
 
-  // Load from localStorage on mount
-  useEffect(() => {
-    const savedTodos = localStorage.getItem("todos");
-    if (savedTodos) {
-      try {
-        setTodos(JSON.parse(savedTodos));
-      } catch (e) {
-        console.error("Failed to parse todos from localStorage", e);
-      }
-    }
-    setIsInitialized(true);
-  }, []);
-
-  // Save to localStorage when todos change
-  useEffect(() => {
-    if (isInitialized) {
-      localStorage.setItem("todos", JSON.stringify(todos));
-    }
-  }, [todos, isInitialized]);
-
-  const addTodo = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
-
-    const newTodo: Todo = {
-      id: Date.now(),
-      text: inputValue.trim(),
-      completed: false,
-    };
-
-    setTodos([...todos, newTodo]);
+    addTodo(inputValue.trim(), selectedCategory);
     setInputValue("");
   };
 
-  const toggleTodo = (id: number) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? {...todo, completed: !todo.completed} : todo
-      )
-    );
-  };
-
-  const deleteTodo = (id: number) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
-  };
-
   if (!isInitialized) {
-    return null; // Prevent hydration mismatch
+    return (
+      <div className="flex items-center justify-center h-[50vh]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-zinc-50 font-sans p-8 dark:bg-black dark:text-white">
-      <main className="w-full max-w-md flex flex-col gap-8">
-        <h1 className="text-4xl font-bold text-center mt-8">ToDo App</h1>
+    <div className="max-w-4xl mx-auto p-4 md:p-8">
+      <header className="mb-8">
+        <h2 className="text-3xl font-bold mb-2">My Tasks</h2>
+        <p className="text-zinc-500">Manage your daily activities and stay organized.</p>
+      </header>
 
-        <form onSubmit={addTodo} className="flex gap-2">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Add a new task..."
-            className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-zinc-800 dark:border-zinc-700"
-          />
-          <button
-            type="submit"
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            Add
-          </button>
-        </form>
-
-        <ul className="flex flex-col gap-3">
-          {todos.length === 0 ? (
-            <p className="text-center text-zinc-500 py-4">No tasks yet. Add one above!</p>
-          ) : (
-            todos.map((todo) => (
-              <li
-                key={todo.id}
-                className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border dark:bg-zinc-900 dark:border-zinc-800"
+      <section className="bg-white dark:bg-zinc-900 rounded-2xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800 mb-8">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="What needs to be done?"
+              className="flex-1 px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-zinc-800 dark:border-zinc-700 transition-all"
+            />
+            <button
+              type="submit"
+              className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-medium flex items-center gap-2"
+            >
+              <Plus size={20} />
+              <span className="hidden sm:inline">Add Task</span>
+            </button>
+          </div>
+          
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-sm text-zinc-500 mr-2">Category:</span>
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  selectedCategory === cat.id
+                    ? `${cat.color} text-white`
+                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                }`}
               >
-                <div className="flex items-center gap-3 flex-1">
-                  <input
-                    type="checkbox"
-                    checked={todo.completed}
-                    onChange={() => toggleTodo(todo.id)}
-                    className="w-5 h-5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
-                  <span
-                    className={`text-lg transition-all ${
-                      todo.completed
-                        ? "line-through text-zinc-400"
-                        : "text-zinc-800 dark:text-zinc-200"
-                    }`}
-                  >
-                    {todo.text}
-                  </span>
-                </div>
-                <button
-                  onClick={() => deleteTodo(todo.id)}
-                  className="p-2 text-zinc-400 hover:text-red-500 transition-colors"
-                  aria-label="Delete task"
+                {cat.name}
+              </button>
+            ))}
+          </div>
+        </form>
+      </section>
+
+      <div className="space-y-4">
+        {todos.length === 0 ? (
+          <div className="text-center py-20 bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-800">
+            <Calendar className="mx-auto mb-4 text-zinc-300" size={48} />
+            <p className="text-zinc-500">No tasks yet. Enjoy your free time!</p>
+          </div>
+        ) : (
+          <ul className="grid gap-3">
+            {[...todos].sort((a, b) => b.createdAt - a.createdAt).map((todo) => {
+              const category = categories.find((c) => c.id === todo.categoryId);
+              return (
+                <li
+                  key={todo.id}
+                  className="group flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 hover:border-blue-300 dark:hover:border-blue-700 transition-all"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="relative flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={todo.completed}
+                        onChange={() => toggleTodo(todo.id)}
+                        className="peer h-6 w-6 rounded-lg border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all"
+                      />
+                    </div>
+                    <div className="flex flex-col">
+                      <span
+                        className={`text-lg font-medium transition-all ${
+                          todo.completed
+                            ? "line-through text-zinc-400"
+                            : "text-zinc-800 dark:text-zinc-200"
+                        }`}
+                      >
+                        {todo.text}
+                      </span>
+                      {category && (
+                        <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full w-fit mt-1 text-white ${category.color}`}>
+                          {category.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => deleteTodo(todo.id)}
+                    className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                    aria-label="Delete task"
                   >
-                    <path d="M3 6h18"/>
-                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                  </svg>
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      </main>
+                    <Trash2 size={18} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
