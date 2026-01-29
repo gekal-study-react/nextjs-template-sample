@@ -217,7 +217,7 @@ jobs:
         with:
           version: 'tags/${{ needs.release-and-deploy.outputs.release_tag }}'
           file: 'build-assets.zip'
-          target: './'
+          target: 'build-assets.zip'
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Unzip assets
