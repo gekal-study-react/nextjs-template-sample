@@ -2,16 +2,11 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+First, install dependencies and run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
@@ -35,21 +30,19 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ### ワークフローの概要
 
-1.  **Pull Request 作成/更新時 (`build-pr` ジョブ)**
+1.  **Pull Request 作成/更新時 (`ci.yml`)**
     * `main` ブランチへの PR が作成または更新された時に実行されます。
-    * 静的サイトのビルド（`pnpm build`）を行い、生成された資産（`out/` ディレクトリ）を GitHub のアーティファクトとして保存します。
-    * アーティファクトにはユニークなビルドタグ（ブランチ名 + 実行ID）が付与されます。
-    * ビルド完了後、PR にビルドタグがコメントとして投稿されます。
+    * ジョブ `check-build`: 静的サイトのビルド（`pnpm build`）が正常に通るかを確認します。
 
-2.  **メインブランチへのマージ時 (`release-and-deploy` ジョブ)**
+2.  **メインブランチへのマージ時 (`release.yml`)**
     * `main` ブランチにプッシュ（PR のマージ）された時に実行されます。
-    * マージされたコミットに関連付けられた PR を特定し、その PR で作成された最新の成功ビルド資産を自動的にダウンロードします。
-    * タイムスタンプ付きの GitHub Release を作成し、ダウンロードした資産を `build-assets.zip` としてアップロードします。
-
-3.  **S3 へのデプロイ (`deploy-to-s3` ジョブ)**
-    * リリース作成完了後に実行されます。
-    * **人間の承認が必要**なステップとして設定されています（`production` 環境）。
-    * 承認後、GitHub Release から資産をダウンロードし、S3 バケット `gekal-nextjs-template-sample` に同期します。
+    * **ビルドとリリース作成 (`build` ジョブ)**:
+        * タイムスタンプ（日本時間）とハッシュを組み合わせたタグ（例: `v2026.01.29-d3fa6d4`）を自動生成します。
+        * プロダクションビルドを実行し、生成された資産（`out/` ディレクトリ）を `build-assets.zip` として GitHub Release にアップロードします。
+        * また、後続のデプロイジョブのためにアーティファクトとして保存します。
+    * **S3 へのデプロイ (`deploy` ジョブ)**:
+        * **人間の承認が必要**なステップとして設定されています（`production` 環境）。
+        * 承認後、ビルド済み資産を S3 バケット（`AWS_S3_BUCKET_NAME` 変数で指定）に同期します。
 
 ### 事前準備と設定
 
@@ -59,10 +52,13 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
     * GitHub リポジトリの `Settings` > `Environments` で `production` という名前の環境を作成してください。
     * `Required reviewers` を有効にし、承認者を設定することで、S3 デプロイ前の承認フローが有効になります。
 
-2.  **Secrets の登録**
-    * `Settings` > `Secrets and variables` > `Actions` に以下の Secrets を登録してください。
+2.  **Secrets と Variables の登録**
+    * `Settings` > `Secrets and variables` > `Actions` に以下を登録してください。
+    * **Secrets**:
         * `AWS_ACCESS_KEY_ID`: AWS アクセスキー
         * `AWS_SECRET_ACCESS_KEY`: AWS シークレットアクセスキー
+    * **Variables**:
+        * `AWS_S3_BUCKET_NAME`: デプロイ先の S3 バケット名 (例: `gekal-nextjs-template-sample`)
 
 3.  **Permissions の設定**
-    * `Settings` > `Actions` > `General` の `Workflow permissions` が `Read and write permissions` になっていることを確認してください。
+    * `Settings` > `Actions` > `General` の `Workflow permissions` が `Read and write permissions` になっていることを確認してください（リリース作成に必要です）。
