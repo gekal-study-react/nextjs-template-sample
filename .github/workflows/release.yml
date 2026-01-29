@@ -6,14 +6,15 @@ on:
       - main
 
 permissions:
-  contents: write
-  id-token: write
+  contents: write   # GitHub Releases作成に必要
+  id-token: write   # AWS認証に必要
 
 jobs:
-  deploy:
+  # ---------------------------------------------------
+  # Job 1: ビルド & リリース作成
+  # ---------------------------------------------------
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: production
     steps:
       - uses: actions/checkout@v4
 
@@ -34,10 +35,12 @@ jobs:
       - name: Production Build
         run: pnpm build
 
-      - name: Create Release Bundle
+      # S3デプロイ用とReleases用にzip化
+      - name: Create Build Bundle
         run: |
           cd out && zip -r ../build-assets.zip .
 
+      # GitHub上の「Releases」ページに履歴として残す
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -46,6 +49,33 @@ jobs:
           files: build-assets.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 次の Deploy ジョブにファイルを渡すためにアップロード
+      # (GitHub Release経由でダウンロードするより高速で確実です)
+      - name: Upload Artifact for Deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-assets
+          path: build-assets.zip
+          retention-days: 1
+
+  # ---------------------------------------------------
+  # Job 2: デプロイ (Build成功時のみ実行)
+  # ---------------------------------------------------
+  deploy:
+    needs: build            # buildジョブが終わるまで待機
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      # buildジョブからファイルをダウンロード
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-assets
+
+      - name: Unzip assets
+        run: unzip build-assets.zip -d out
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
