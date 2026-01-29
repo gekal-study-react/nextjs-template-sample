@@ -84,29 +84,58 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get PR number
+      - name: Get PR number with Retry
         id: pr_info
         uses: actions/github-script@v7
         with:
           script: |
             const { owner, repo } = context.repo;
             const commit_sha = context.sha;
-            const pulls = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-              owner,
-              repo,
-              commit_sha,
-            });
+            
+            // 待機用の関数
+            const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            
+            // 最大3回、5秒間隔でリトライする設定
+            const MAX_RETRIES = 3;
+            const DELAY_MS = 5000;
+
+            let pulls = { data: [] };
+
+            // APIの反映遅延を考慮してリトライループを実行
+            for (let i = 0; i < MAX_RETRIES; i++) {
+              console.log(`Attempt ${i + 1} to find associated PR...`);
+            
+              pulls = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner,
+                repo,
+                commit_sha,
+              });
+
+              if (pulls.data.length > 0) {
+                break; // PRが見つかったらループを抜ける
+              }
+
+              if (i < MAX_RETRIES - 1) {
+                console.log(`No PR found yet. Waiting ${DELAY_MS}ms for API consistency...`);
+                await wait(DELAY_MS);
+              }
+            }
+
             if (pulls.data.length > 0) {
               const pr = pulls.data[0];
               core.setOutput('pr_number', pr.number);
+            
               // build-pr ジョブと同様のロジックでクリーンなブランチ名を生成
               const raw_branch = pr.head.ref;
               core.setOutput('raw_branch', raw_branch);
+            
               const clean_branch = raw_branch.replace('release-waiting-', '').replace(/[^a-zA-Z0-9]/g, '-');
               core.setOutput('branch_for_search', clean_branch);
+            
               console.log(`Associated PR: ${pr.number}, Branch: ${raw_branch}, Search: ${clean_branch}`);
             } else {
-              core.setFailed('No associated PR found for this commit.');
+              // リトライ後も見つからない場合はエラー
+              core.setFailed('No associated PR found for this commit after retries.');
             }
 
       - name: Download Artifact from PR
@@ -116,12 +145,9 @@ jobs:
             const { owner, repo } = context.repo;
             const pr_number = "${{ steps.pr_info.outputs.pr_number }}";
             const branch_for_search = "${{ steps.pr_info.outputs.branch_for_search }}";
-            
-            // その実行のアーティファクトを取得 (PRの最新の成功実行から)
-            // PRに関連する最新のワークフロー実行をリストアップ
-            // listWorkflowRunsForRepo does not always return pull_requests in the response depending on how it's called.
-            // Using listWorkflowRuns with branch might be more reliable if we know the branch.
             const branch_raw = "${{ steps.pr_info.outputs.raw_branch }}";
+            
+            // 指定ブランチでの最新の成功したワークフロー実行を取得
             const runs = await github.rest.actions.listWorkflowRunsForRepo({
               owner,
               repo,
@@ -132,15 +158,14 @@ jobs:
             
             console.log(`Searching for runs on branch: ${branch_raw}. Found ${runs.data.workflow_runs.length} successful runs.`);
             
-            // 該当するPR番号の実行を探す
+            // PR番号でフィルタリングを試みる
             let pr_run = runs.data.workflow_runs.find(run => 
               run.pull_requests && run.pull_requests.some(pr => pr.number == pr_number)
             );
 
-            // If not found by pull_requests array, just take the latest successful run on that branch
-            // which is likely the one that built the PR.
+            // 明示的にPR情報が紐付いていない場合、ブランチ最新の成功実行を使用（フォールバック）
             if (!pr_run && runs.data.workflow_runs.length > 0) {
-              console.log(`PR # ${pr_number} not explicitly found in run metadata. Using the latest successful run on branch ${branch_raw}.`);
+              console.log(`PR #${pr_number} not explicitly found in run metadata. Using the latest successful run on branch ${branch_raw}.`);
               pr_run = runs.data.workflow_runs[0];
             }
             
@@ -154,7 +179,7 @@ jobs:
               run_id: pr_run.id,
             });
             
-            // 生成されたブランチ名部分を含むアーティファクトを探す
+            // ブランチ名（クリーン版）を含むアーティファクトを検索
             const artifact = artifacts.data.artifacts.find(art => art.name.startsWith(branch_for_search));
             
             if (!artifact) {
@@ -210,14 +235,14 @@ jobs:
       url: http://gekal-nextjs-template-sample.s3-website-ap-northeast-1.amazonaws.com
     steps:
       - name: Download Release Asset
-        uses: actions/checkout@v4 # リポジトリの内容が必要な場合のため（通常は不要かもしれないが安全策）
+        uses: actions/checkout@v4
 
       - name: Download Build Artifacts from Release
         uses: dsaltares/fetch-gh-release-asset@master
         with:
           version: 'tags/${{ needs.release-and-deploy.outputs.release_tag }}'
           file: 'build-assets.zip'
-          target: 'build-assets.zip'
+          target: 'build-assets.zip' # 修正済み: ディレクトリではなくファイル名を指定
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Unzip assets
