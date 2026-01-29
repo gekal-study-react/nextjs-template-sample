@@ -89,4 +89,4 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          aws s3 sync out/ s3://gekal-nextjs-template-sample --delete
+          aws s3 sync out/ s3://${{ env.AWS_S3_BUCKET_NAME }} --delete
