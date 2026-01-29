@@ -6,17 +6,27 @@ on:
       - main
 
 permissions:
-  contents: write   # GitHub Releases作成に必要
-  id-token: write   # AWS認証に必要
+  contents: write
+  id-token: write
 
 jobs:
-  # ---------------------------------------------------
-  # Job 1: ビルド & リリース作成
-  # ---------------------------------------------------
   build:
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.release_tag.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Generate Release Tag
+        id: release_tag
+        run: |
+          # 日本時間の日付 + ショートハッシュ
+          DATE=$(TZ=Asia/Tokyo date +'%Y.%m.%d')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG_NAME="v${DATE}-${SHORT_SHA}"
+          
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "Generated Tag: ${TAG_NAME}"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -35,40 +45,33 @@ jobs:
       - name: Production Build
         run: pnpm build
 
-      # S3デプロイ用とReleases用にzip化
       - name: Create Build Bundle
         run: |
           cd out && zip -r ../build-assets.zip .
 
-      # GitHub上の「Releases」ページに履歴として残す
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: release-${{ github.run_number }}
-          name: Release ${{ github.run_number }}
+          tag_name: ${{ steps.release_tag.outputs.tag_name }}
+          name: ${{ steps.release_tag.outputs.tag_name }}
           files: build-assets.zip
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 次の Deploy ジョブにファイルを渡すためにアップロード
-      # (GitHub Release経由でダウンロードするより高速で確実です)
       - name: Upload Artifact for Deployment
         uses: actions/upload-artifact@v4
         with:
           name: deploy-assets
           path: build-assets.zip
-          retention-days: 1
+          retention-days: 90
 
-  # ---------------------------------------------------
-  # Job 2: デプロイ (Build成功時のみ実行)
-  # ---------------------------------------------------
   deploy:
-    needs: build            # buildジョブが終わるまで待機
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: production
     steps:
-      # buildジョブからファイルをダウンロード
       - name: Download Build Artifact
         uses: actions/download-artifact@v4
         with:
