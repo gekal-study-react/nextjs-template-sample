@@ -1,7 +1,7 @@
 # ---------------------------------------------------
 # Stage 1: Build Environment
 # ---------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:24.12.0-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN apk add --no-cache libc6-compat
 RUN corepack enable
 
 # 依存関係のインストール（キャッシュ活用のためにファイルを先にコピー）
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 
 # ソースコードをコピーしてビルドを実行
